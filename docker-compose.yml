@@ -2,53 +2,84 @@ version: '3.8'
 
 services:
   redis:
-    image: redis:latest
-    platform: linux/amd64
-    command: redis-server --requirepass default
+    image: redis:7.2.8-alpine
+    restart: unless-stopped
+    command: >
+      redis-server --requirepass ${REDIS_PASSWORD}
     environment:
-      REDIS_USER: default
-      REDIS_PASSWORD: default
-    ports:
-      - "6379:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - backend
 
   postgres:
-    image: postgres:latest
-    platform: linux/amd64
+    image: postgres:15.4-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: default
-      POSTGRES_PASSWORD: default
-      POSTGRES_DB: default
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data:rw
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - backend
 
   waha:
-    image: devlikeapro/waha:latest
-    platform: linux/amd64
+    image: devlikeapro/waha:1.2.3   # troque pela tag fixa mais recente
+    restart: unless-stopped
     environment:
-      WHATSAPP_HOOK_URL: http://host.docker.internal:5678/webhook/webhook
-      WHATSAPP_DEFAULT_ENGINE: GOWS
-      WHATSAPP_HOOK_EVENTS: message
+      WHATSAPP_HOOK_URL: ${WHATSAPP_HOOK_URL}
+      WHATSAPP_DEFAULT_ENGINE: ${WHATSAPP_DEFAULT_ENGINE}
+      WHATSAPP_HOOK_EVENTS: ${WHATSAPP_HOOK_EVENTS}
     volumes:
-      - waha_sessions:/app/.sessions
-      - waha_media:/app/.media
+      - waha_sessions:/app/.sessions:rw
+      - waha_media:/app/.media:rw
     ports:
       - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"] 
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - backend
+      - frontend
 
   n8n:
-    image: n8nio/n8n:latest
-    platform: linux/amd64
+    image: n8nio/n8n:1.0.0   # troque pela tag fixa mais recente
+    restart: unless-stopped
     environment:
-      WEBHOOK_URL: http://host.docker.internal:5678
-      N8N_HOST: host.docker.internal
-      GENERIC_TIMEZONE: America/Sao_Paulo
-      N8N_LOG_LEVEL: debug
-      N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE: true
+      WEBHOOK_URL: ${WEBHOOK_URL}
+      N8N_HOST: ${N8N_HOST}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
+      N8N_LOG_LEVEL: ${N8N_LOG_LEVEL}
+      N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE: "true"
     volumes:
-      - n8n_data:/home/node/.n8n
+      - n8n_data:/home/node/.n8n:rw
     ports:
       - "5678:5678"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://${N8N_HOST}:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - frontend
+
+networks:
+  backend:
+    driver: bridge
+  frontend:
+    driver: bridge
 
 volumes:
   pgdata:
